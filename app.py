@@ -49,7 +49,7 @@ async function checkStatus(){try{const r=await fetch('/api/health',{cache:'no-st
 form.addEventListener('submit',async e=>{e.preventDefault();const message=input.value.trim();if(!message)return;addMessage('user',message);input.value='';send.disabled=true;send.textContent='…';try{const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message})});const data=await r.json();if(!r.ok)throw new Error(data.error||('HTTP '+r.status));addMessage('assistant',data.reply||'Keine Antwort erhalten.')}catch(err){addMessage('assistant','Fehler: '+err.message)}finally{send.disabled=false;send.textContent='Senden';input.focus()}});
 input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();form.requestSubmit()}});
 checkStatus();
-</script></body></html>'''
+</script><script src="https://ultima-membership-api.onrender.com/support-widget.js" defer></script></body></html>'''
 @app.get('/')
 def index(): return render_template_string(PAGE)
 @app.get('/api/health')
