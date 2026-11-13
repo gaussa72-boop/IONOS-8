@@ -1,4 +1,6 @@
 from flask import Flask, request, jsonify, render_template_string
+import requests
+import os
 
 app = Flask(__name__)
 
@@ -15,22 +17,74 @@ def _sec_before():
 @app.after_request
 def _sec_headers(response):
     response.headers.setdefault("X-Content-Type-Options","nosniff");response.headers.setdefault("X-Frame-Options","DENY");response.headers.setdefault("Referrer-Policy","strict-origin-when-cross-origin");response.headers.setdefault("Permissions-Policy","camera=(), microphone=(), geolocation=()");response.headers.setdefault("Strict-Transport-Security","max-age=31536000; includeSubDomains");response.headers.pop("Server",None);return response
-PAGE='''<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>IONOS-8</title><style>body{margin:0;background:#02030a;color:#eef5ff;font:16px system-ui}main{max-width:900px;margin:auto;padding:12vh 24px;text-align:center}.orb{margin:auto;width:190px;height:190px;border-radius:50%;background:radial-gradient(circle,#fff,#75d8ff 15%,#145cff 40%,transparent 72%);box-shadow:0 0 100px #1685ff}h1{font-size:52px;letter-spacing:.1em}p{color:#9caad0}button{padding:12px 18px;border-radius:10px;border:0;font-weight:700}/* ULTIMA COMPLETE 2026 */
-:root{color-scheme:dark;--u-line:rgba(255,255,255,.13);--u-glass:rgba(15,20,32,.72);--u-cyan:#7de9ef;--u-gold:#d9b66f}
-html{scroll-behavior:smooth}body{overflow-x:hidden!important;background-image:radial-gradient(ellipse at 15% 0%,rgba(86,100,180,.2),transparent 40%),radial-gradient(ellipse at 90% 10%,rgba(31,180,187,.12),transparent 35%)}
-header,.site-header,.announcement,.searchbar,.cart-drawer,.product-card,.modal,.panel{backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
-button,.btn,.cart-btn,a{transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
-button:hover,.btn:hover,.cart-btn:hover{transform:translateY(-1px)}
-input,textarea,select{max-width:100%;outline:none}input:focus,textarea:focus,select:focus,button:focus-visible,a:focus-visible{outline:2px solid var(--u-cyan)!important;outline-offset:3px}
-img{max-width:100%;height:auto}
-@media(max-width:760px){.site-header{padding-left:14px!important;padding-right:14px!important}.nav{gap:12px}.product-grid,.products-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.hero h1,h1{overflow-wrap:anywhere}}
-@media(max-width:440px){.product-grid,.products-grid{grid-template-columns:1fr!important}}
-@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}
-</style></head><body><main><div class="orb"></div><h1>IONOS-8</h1><p>Eigenständige IONOS-KI-/System-App</p><button id="statusButton" type="button" onclick="checkStatus()">SYSTEM STATUS</button><p id="statusMessage" role="status" aria-live="polite" style="min-height:1.5em;margin-top:18px;color:#9caad0">System bereit · IONOS-8 online</p></main><script>async function checkStatus(){const out=document.getElementById('statusMessage'),btn=document.getElementById('statusButton');btn.disabled=true;out.textContent='Systemstatus wird geprüft …';try{const r=await fetch('/api/health',{headers:{'Accept':'application/json'},cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);const x=await r.json();out.textContent='● System online · '+(x.app||'IONOS-8')+' · Status: '+(x.status||'OK');out.style.color='#7de3b0'}catch(e){out.textContent='Systemstatus derzeit nicht abrufbar. Bitte in wenigen Sekunden erneut versuchen.';out.style.color='#ffb4a8'}finally{btn.disabled=false}}(function(){const M=[["openai/gpt-5.6-luna","OpenAI · GPT-5.6 Luna"],["anthropic/claude-sonnet-5","Anthropic · Claude Sonnet 5"],["google/gemini-3.8-flash","Google · Gemini 3.8 Flash"],["x-ai/grok-4.7","xAI · Grok 4.7"],["deepseek/deepseek-v4.1-flash","DeepSeek · V4.1 Flash"],["z-ai/glm-5.3-flashx","Z.ai · GLM 5.3 FlashX"],["qwen/qwen3.7-plus-20260602","Qwen · Qwen3.7 Plus"],["moonshotai/kimi-k3","Moonshot · Kimi K3"],["minimax/minimax-m3","MiniMax · M3"],["mistralai/mistral-small-2603","Mistral · Small 4"]];const s=document.createElement('select');s.id='ai-model-select';s.setAttribute('aria-label','KI-Modell wählen');s.style.cssText='position:fixed;top:14px;right:14px;z-index:9999;background:#15131f;color:#fff;border:1px solid #8b5cf6;border-radius:999px;padding:7px 10px;font:inherit;max-width:230px';M.forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;s.appendChild(o)});const x=localStorage.getItem('ai_model');if(x&&M.some(m=>m[0]===x))s.value=x;s.onchange=()=>localStorage.setItem('ai_model',s.value);document.body.appendChild(s)})()</script></body></html>'''
+PAGE='''<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IONOS-8 · AI Workspace</title>
+<style>
+:root{color-scheme:dark;--bg:#080a12;--panel:#111522;--line:rgba(255,255,255,.1);--cyan:#80e8ef;--muted:#9aa5bb}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% -15%,#1b2850 0,transparent 55%),var(--bg);color:#eef3ff;font:15px system-ui,-apple-system,sans-serif}
+header{height:68px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 22px;background:rgba(8,10,18,.8);backdrop-filter:blur(16px)}
+.brand{display:flex;gap:12px;align-items:center;font-weight:750;letter-spacing:.08em}.orb{width:30px;height:30px;border-radius:50%;background:radial-gradient(circle,#fff,#80e8ef 22%,#3158db 65%,transparent 72%);box-shadow:0 0 24px #3158db}
+.status{font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:7px 12px}
+main{max-width:920px;margin:0 auto;padding:34px 18px 28px;min-height:calc(100vh - 68px);display:flex;flex-direction:column}
+h1{font-size:clamp(26px,5vw,42px);margin:12px 0 6px}.sub{color:var(--muted);margin:0 0 24px}
+#messages{flex:1;min-height:260px;max-height:62vh;overflow:auto;display:flex;flex-direction:column;gap:14px;padding:16px 0}
+.msg{max-width:88%;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.55;padding:13px 16px;border:1px solid var(--line);border-radius:16px;background:var(--panel)}
+.msg.user{align-self:flex-end;background:#182441;border-color:#2d416e}.msg.assistant{align-self:flex-start}
+.composer{border:1px solid var(--line);border-radius:18px;background:rgba(17,21,34,.92);padding:12px;display:flex;gap:10px;align-items:flex-end;box-shadow:0 18px 60px #0006}
+textarea{flex:1;resize:vertical;min-height:54px;max-height:180px;background:transparent;color:#fff;border:0;outline:0;font:inherit;padding:10px}
+button{border:0;border-radius:12px;padding:12px 18px;background:linear-gradient(135deg,#5d7be7,#2aa8b7);color:#06101c;font-weight:750;cursor:pointer}button:disabled{opacity:.55;cursor:wait}
+.note{font-size:12px;color:var(--muted);margin:10px 4px}.model{color:var(--cyan);font-size:12px}
+@media(max-width:600px){header{padding:0 14px}main{padding:22px 12px}.msg{max-width:96%}.composer{gap:5px;padding:8px}button{padding:11px 13px}}
+</style></head>
+<body><header><div class="brand"><span class="orb"></span><span>IONOS-8</span><span class="model">AI WORKSPACE</span></div><div id="status" class="status">System wird geprüft …</div></header>
+<main><h1>Womit kann ich helfen?</h1><p class="sub">Dein KI-Arbeitsbereich für Fragen, Analyse und Programmierung.</p>
+<div id="messages" aria-live="polite"><div class="msg assistant">Hallo! Ich bin dein IONOS-8-Assistent. Schreib mir, woran wir arbeiten sollen.</div></div>
+<form id="chatForm" class="composer"><textarea id="message" placeholder="Nachricht an IONOS-8 …" required></textarea><button id="send" type="submit">Senden</button></form>
+<p class="note">Die KI benötigt einen gültigen OPENAI_API_KEY in den Render Environment Variables. API-Schlüssel werden nicht im Browser gespeichert.</p></main>
+<script>
+const messages=document.getElementById('messages'),statusEl=document.getElementById('status'),form=document.getElementById('chatForm'),input=document.getElementById('message'),send=document.getElementById('send');
+function addMessage(role,text){const node=document.createElement('div');node.className='msg '+role;node.textContent=text;messages.appendChild(node);messages.scrollTop=messages.scrollHeight}
+async function checkStatus(){try{const r=await fetch('/api/health',{cache:'no-store'});const x=await r.json();statusEl.textContent=x.ai_configured?'● KI verbunden · '+x.model:'○ API-Key fehlt';statusEl.style.color=x.ai_configured?'#8de5b1':'#f2c27a'}catch(e){statusEl.textContent='Status nicht verfügbar'}}
+form.addEventListener('submit',async e=>{e.preventDefault();const message=input.value.trim();if(!message)return;addMessage('user',message);input.value='';send.disabled=true;send.textContent='…';try{const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message})});const data=await r.json();if(!r.ok)throw new Error(data.error||('HTTP '+r.status));addMessage('assistant',data.reply||'Keine Antwort erhalten.')}catch(err){addMessage('assistant','Fehler: '+err.message)}finally{send.disabled=false;send.textContent='Senden';input.focus()}});
+input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();form.requestSubmit()}});
+checkStatus();
+</script></body></html>'''
 @app.get('/')
 def index(): return render_template_string(PAGE)
 @app.get('/api/health')
-def health(): return jsonify(status='ok',app='IONOS-8',mode='standalone')
+def health(): return jsonify(status='ok',app='IONOS-8',mode='openai-chat',ai_configured=bool(os.getenv('OPENAI_API_KEY','').strip()),model=os.getenv('OPENAI_MODEL','gpt-4o-mini'))
+
+@app.post('/api/chat')
+def ai_chat():
+    data=request.get_json(silent=True) or {}
+    message=str(data.get('message') or '').strip()
+    if not message:return jsonify(error='Bitte gib eine Nachricht ein.'),400
+    if len(message)>12000:return jsonify(error='Nachricht ist zu lang (max. 12.000 Zeichen).'),413
+    api_key=os.getenv('OPENAI_API_KEY','').strip()
+    if not api_key:return jsonify(error='OPENAI_API_KEY fehlt in den Render Environment Variables.'),503
+    model=os.getenv('OPENAI_MODEL','gpt-4o-mini').strip()
+    try:
+        response=requests.post('https://api.openai.com/v1/responses',
+            headers={'Authorization':f'Bearer {api_key}','Content-Type':'application/json'},
+            json={'model':model,'instructions':'Du bist IONOS-8, ein hilfreicher deutschsprachiger KI-Assistent für Analyse, Recherche, Programmierung und Projektarbeit. Antworte klar und erfinde keine Fakten oder ausgeführten Aktionen.','input':message},
+            timeout=60)
+        if not response.ok:
+            app.logger.warning('OpenAI returned HTTP %s: %s',response.status_code,response.text[:500])
+            return jsonify(error='OpenAI-Anfrage fehlgeschlagen. Prüfe API-Key, Modellfreigabe und Guthaben.'),502
+        payload=response.json()
+        answer=payload.get('output_text')
+        if not answer:
+            parts=[]
+            for item in payload.get('output',[]):
+                for block in item.get('content',[]):
+                    if block.get('type')=='output_text' and block.get('text'):parts.append(block['text'])
+            answer='\\n'.join(parts)
+        if not answer:return jsonify(error='Das KI-Modell hat keine Textantwort zurückgegeben.'),502
+        return jsonify(ok=True,reply=answer,model=model),200
+    except requests.RequestException:
+        app.logger.exception('IONOS-8 OpenAI request failed')
+        return jsonify(error='OpenAI ist momentan nicht erreichbar.'),502
 
 @app.get('/favicon.ico')
 def favicon():
