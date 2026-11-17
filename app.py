@@ -53,7 +53,10 @@ checkStatus();
 @app.get('/')
 def index(): return render_template_string(PAGE)
 @app.get('/api/health')
-def health(): return jsonify(status='ok',app='IONOS-8',mode='openai-chat',ai_configured=bool(os.getenv('OPENAI_API_KEY','').strip()),model=os.getenv('OPENAI_MODEL','gpt-4o-mini'))
+def health():
+    enabled=os.getenv('AI_ENABLED','true').strip().lower()=='true'
+    configured=bool(os.getenv('OPENAI_API_KEY','').strip() or os.getenv('OPENROUTER_API_KEY','').strip())
+    return jsonify(status='ok',app='IONOS-8',mode='ai-chat',ai_enabled=enabled,ai_configured=enabled and configured,provider=os.getenv('AI_PROVIDER','auto'),model=os.getenv('OPENAI_MODEL','gpt-4o-mini'))
 
 @app.post('/api/chat')
 def ai_chat():
@@ -61,30 +64,54 @@ def ai_chat():
     message=str(data.get('message') or '').strip()
     if not message:return jsonify(error='Bitte gib eine Nachricht ein.'),400
     if len(message)>12000:return jsonify(error='Nachricht ist zu lang (max. 12.000 Zeichen).'),413
-    api_key=os.getenv('OPENAI_API_KEY','').strip()
-    if not api_key:return jsonify(error='OPENAI_API_KEY fehlt in den Render Environment Variables.'),503
-    model=os.getenv('OPENAI_MODEL','gpt-4o-mini').strip()
+    if os.getenv('AI_ENABLED','true').strip().lower()!='true':
+        return jsonify(error='IONOS-8 ist mit AI_ENABLED=false deaktiviert.'),503
+
+    openai_key=os.getenv('OPENAI_API_KEY','').strip()
+    router_key=os.getenv('OPENROUTER_API_KEY','').strip()
+    preference=os.getenv('AI_PROVIDER','auto').strip().lower()
+    use_router=(preference=='openrouter' and bool(router_key)) or (not openai_key and bool(router_key))
+    if preference=='openai' and not openai_key:
+        return jsonify(error='AI_PROVIDER=openai, aber OPENAI_API_KEY fehlt.'),503
+    if not openai_key and not router_key:
+        return jsonify(error='OPENAI_API_KEY oder OPENROUTER_API_KEY fehlt in Render.'),503
+    model=(os.getenv('OPENROUTER_MODEL','openai/gpt-4o-mini').strip() if use_router else os.getenv('OPENAI_MODEL','gpt-4o-mini').strip())
+    if not model:return jsonify(error='Das KI-Modell ist nicht konfiguriert.'),503
+
     try:
-        response=requests.post('https://api.openai.com/v1/responses',
-            headers={'Authorization':f'Bearer {api_key}','Content-Type':'application/json'},
-            json={'model':model,'instructions':'Du bist IONOS-8, ein hilfreicher deutschsprachiger KI-Assistent für Analyse, Recherche, Programmierung und Projektarbeit. Antworte klar und erfinde keine Fakten oder ausgeführten Aktionen.','input':message},
-            timeout=60)
-        if not response.ok:
-            app.logger.warning('OpenAI returned HTTP %s: %s',response.status_code,response.text[:500])
-            return jsonify(error='OpenAI-Anfrage fehlgeschlagen. Prüfe API-Key, Modellfreigabe und Guthaben.'),502
-        payload=response.json()
-        answer=payload.get('output_text')
-        if not answer:
-            parts=[]
-            for item in payload.get('output',[]):
-                for block in item.get('content',[]):
-                    if block.get('type')=='output_text' and block.get('text'):parts.append(block['text'])
-            answer='\\n'.join(parts)
-        if not answer:return jsonify(error='Das KI-Modell hat keine Textantwort zurückgegeben.'),502
-        return jsonify(ok=True,reply=answer,model=model),200
+        if use_router:
+            from openai import OpenAI
+            client=OpenAI(api_key=router_key,base_url='https://openrouter.ai/api/v1',timeout=45,max_retries=1)
+            response=client.chat.completions.create(
+                model=model,
+                messages=[
+                    {'role':'system','content':'Du bist IONOS-8, ein eigenständiger, präziser deutschsprachiger KI-Assistent für Analyse, Recherche, Programmierung und Projektarbeit. Antworte klar, unterscheide Fakten von Annahmen und behaupte keine ausgeführten Aktionen.'},
+                    {'role':'user','content':message}
+                ],
+                max_tokens=1200
+            )
+            answer=response.choices[0].message.content or ''
+        else:
+            response=requests.post('https://api.openai.com/v1/responses',
+                headers={'Authorization':f'Bearer {openai_key}','Content-Type':'application/json'},
+                json={'model':model,'instructions':'Du bist IONOS-8, ein eigenständiger, präziser deutschsprachiger KI-Assistent für Analyse, Recherche, Programmierung und Projektarbeit. Antworte klar, unterscheide Fakten von Annahmen und behaupte keine ausgeführten Aktionen.','input':message,'store':False,'max_output_tokens':1200},
+                timeout=45)
+            if not response.ok:
+                app.logger.warning('OpenAI returned HTTP %s',response.status_code)
+                return jsonify(error='OpenAI-Anfrage fehlgeschlagen. Prüfe API-Key, Modellfreigabe und Guthaben.'),502
+            payload=response.json()
+            answer=payload.get('output_text') or ''
+            if not answer:
+                parts=[block.get('text','') for item in payload.get('output',[]) for block in item.get('content',[]) if block.get('type')=='output_text']
+                answer='\\n'.join(parts)
+        if not answer.strip():return jsonify(error='Das KI-Modell hat keine Textantwort zurückgegeben.'),502
+        return jsonify(ok=True,reply=answer,model=model,provider='openrouter' if use_router else 'openai'),200
     except requests.RequestException:
         app.logger.exception('IONOS-8 OpenAI request failed')
         return jsonify(error='OpenAI ist momentan nicht erreichbar.'),502
+    except Exception:
+        app.logger.exception('IONOS-8 AI request failed')
+        return jsonify(error='KI-Anfrage fehlgeschlagen. Prüfe Anbieter, Modellfreigabe und Guthaben.'),502
 
 @app.get('/favicon.ico')
 def favicon():
