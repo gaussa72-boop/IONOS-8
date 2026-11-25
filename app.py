@@ -4,6 +4,9 @@ import os
 
 app = Flask(__name__)
 
+from agent_bridge import register_agent_bridge
+register_agent_bridge(app, agent_id="ionos8", display_name="IONOS-8", persona="Du bist ein vielseitiger technischer und kreativer Agent für Analyse, Coding, Recherche und Problemlösung.")
+
 # SECURITY HARDENING
 _SEC_RATE_LIMIT={}
 from time import monotonic
